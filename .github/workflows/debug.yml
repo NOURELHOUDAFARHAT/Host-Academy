@@ -1,0 +1,44 @@
+name: Debug Workflow
+
+on:
+  push:
+    branches: [ 'feature/**' ]
+  workflow_dispatch:
+
+jobs:
+  debug:
+    name: Debug Info
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show environment
+        run: |
+          echo "🔍 Debug Information"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Repository: ${{ github.repository }}"
+          
+      - name: List workflow files
+        run: |
+          echo "📁 Workflow files:"
+          ls -la .github/workflows/
+          
+      - name: Check project structure
+        run: |
+          echo "📂 Project structure:"
+          ls -la
+          echo ""
+          echo "📂 API directory:"
+          ls -la api/ || echo "API directory not found"
+          echo ""
+          echo "📂 Client directory:"
+          ls -la Client/ || echo "Client directory not found"
+
+      - name: Test Node.js setup
+        run: |
+          echo "🚀 Node.js version: $(node --version)"
+          echo "📦 NPM version: $(npm --version)"
