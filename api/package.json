@@ -4,8 +4,9 @@
   "description": "SummerInternship",
   "main": "app.js",
   "scripts": {
-    "start": "concurrently \"nodemon server\" \"cd.. && cd client && npm start\"",
-    "dev": "nodemon server"
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "author": "",
   "license": "ISC",
