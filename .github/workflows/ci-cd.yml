@@ -29,10 +29,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: api/package-lock.json
+          cache-dependency-path: api/package.json
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Run linting
         run: |
@@ -72,10 +77,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: Client/package-lock.json
+          cache-dependency-path: Client/package.json
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Run linting
         run: |
@@ -185,43 +195,15 @@ jobs:
   notify:
     name: Notifications
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-test, security-check, docker-build]
+    needs: [backend-test, frontend-test, security-check]
     if: always()
 
     steps:
-      - name: Discord notification (success)
-        if: ${{ needs.backend-test.result == 'success' && needs.frontend-test.result == 'success' }}
-        uses: Ilshidur/action-discord@master
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        with:
-          args: |
-            ✅ **CI/CD Pipeline Success** for `${{ github.repository }}`
-            
-            **Details:**
-            - 🔧 Backend: ${{ needs.backend-test.result }}
-            - ⚛️ Frontend: ${{ needs.frontend-test.result }}
-            - 🔒 Security: ${{ needs.security-check.result }}
-            - 🐳 Docker: ${{ needs.docker-build.result }}
-            
-            **Commit:** `${{ github.sha }}`
-            **Author:** ${{ github.actor }}
-            **Branch:** ${{ github.ref_name }}
-
-      - name: Discord notification (failure)
-        if: ${{ needs.backend-test.result == 'failure' || needs.frontend-test.result == 'failure' }}
-        uses: Ilshidur/action-discord@master
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        with:
-          args: |
-            ❌ **CI/CD Pipeline Failed** for `${{ github.repository }}`
-            
-            **Failed Jobs:**
-            - 🔧 Backend: ${{ needs.backend-test.result }}
-            - ⚛️ Frontend: ${{ needs.frontend-test.result }}
-            - 🔒 Security: ${{ needs.security-check.result }}
-            
-            **Commit:** `${{ github.sha }}`
-            **Author:** ${{ github.actor }}
-            **Branch:** ${{ github.ref_name }}
+      - name: Job Summary
+        run: |
+          echo "## 📊 Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔧 Backend: ${{ needs.backend-test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ⚛️ Frontend: ${{ needs.frontend-test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔒 Security: ${{ needs.security-check.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 📝 Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- � Author: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
