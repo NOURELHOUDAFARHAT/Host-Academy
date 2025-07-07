@@ -1,0 +1,33 @@
+name: Simple Test Workflow
+
+on:
+  push:
+    branches: [ 'feature/**' ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Simple Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Simple echo test
+        run: |
+          echo "🎉 GitHub Actions is working!"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          
+      - name: List project structure
+        run: |
+          echo "📁 Project structure:"
+          ls -la
+          echo ""
+          echo "📁 API directory:"
+          ls -la api/ || echo "API directory not found"
+          echo ""
+          echo "📁 Client directory:"
+          ls -la Client/ || echo "Client directory not found"
