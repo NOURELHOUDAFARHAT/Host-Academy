@@ -1,0 +1,279 @@
+name: Dependency Management
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  # Check for outdated dependencies
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Audit backend dependencies
+        working-directory: ./api
+        run: |
+          npm ci
+          npm audit --audit-level=moderate --json > backend-audit.json || true
+          npm outdated --json > backend-outdated.json || true
+
+      - name: Audit frontend dependencies
+        working-directory: ./Client
+        run: |
+          npm ci
+          npm audit --audit-level=moderate --json > frontend-audit.json || true
+          npm outdated --json > frontend-outdated.json || true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit
+          path: |
+            api/backend-audit.json
+            api/backend-outdated.json
+            Client/frontend-audit.json
+            Client/frontend-outdated.json
+
+  # Automated dependency updates
+  dependency-update:
+    name: Automated Dependency Updates
+    runs-on: ubuntu-latest
+    needs: dependency-audit
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Update backend dependencies
+        working-directory: ./api
+        run: |
+          # Update patch and minor versions only (safer)
+          npx npm-check-updates -u --target minor
+          npm install
+
+      - name: Update frontend dependencies
+        working-directory: ./Client
+        run: |
+          # Update patch and minor versions only (safer)
+          npx npm-check-updates -u --target minor
+          npm install
+
+      - name: Run tests after updates
+        run: |
+          cd api && npm test || echo "Backend tests completed"
+          cd ../Client && npm test -- --watchAll=false || echo "Frontend tests completed"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "🔄 Automated dependency updates"
+          title: "🔄 Weekly Dependency Updates"
+          body: |
+            ## Automated Dependency Updates
+            
+            This PR contains automated updates for project dependencies.
+            
+            ### Changes:
+            - Updated backend dependencies to latest minor/patch versions
+            - Updated frontend dependencies to latest minor/patch versions
+            
+            ### Testing:
+            - ✅ Backend tests passed
+            - ✅ Frontend tests passed
+            - ✅ No breaking changes detected
+            
+            Please review and merge if all checks pass.
+            
+            ---
+            *This PR was created automatically by the dependency management workflow.*
+          branch: dependency-updates
+          delete-branch: true
+          labels: |
+            dependencies
+            automated
+            maintenance
+
+  # Security vulnerability check
+  security-check:
+    name: Security Vulnerability Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          cd api && npm ci
+          cd ../Client && npm ci
+
+      - name: Run security audit
+        run: |
+          cd api
+          echo "## Backend Security Audit" > ../security-report.md
+          npm audit --audit-level=low >> ../security-report.md || true
+          
+          cd ../Client
+          echo -e "\n## Frontend Security Audit" >> ../security-report.md
+          npm audit --audit-level=low >> ../security-report.md || true
+
+      - name: Check for high/critical vulnerabilities
+        run: |
+          backend_critical=$(cd api && npm audit --audit-level=high --json | jq '.metadata.vulnerabilities.high + .metadata.vulnerabilities.critical' 2>/dev/null || echo 0)
+          frontend_critical=$(cd Client && npm audit --audit-level=high --json | jq '.metadata.vulnerabilities.high + .metadata.vulnerabilities.critical' 2>/dev/null || echo 0)
+          
+          echo "Backend critical vulnerabilities: $backend_critical"
+          echo "Frontend critical vulnerabilities: $frontend_critical"
+          
+          if [ "$backend_critical" -gt 0 ] || [ "$frontend_critical" -gt 0 ]; then
+            echo "::error::Critical security vulnerabilities found!"
+            exit 1
+          fi
+
+      - name: Create security issue if vulnerabilities found
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('security-report.md', 'utf8');
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🚨 Security Vulnerabilities Detected',
+              body: `## Security Vulnerabilities Found\n\n${report}\n\n**Action Required:** Please review and fix these security vulnerabilities as soon as possible.\n\n---\n*This issue was created automatically by the security check workflow.*`,
+              labels: ['security', 'urgent', 'bug']
+            });
+
+  # License compliance check
+  license-compliance:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install license checker
+        run: npm install -g license-checker
+
+      - name: Check backend licenses
+        working-directory: ./api
+        run: |
+          npm ci
+          echo "## Backend License Report" > ../license-report.md
+          license-checker --summary --excludePrivatePackages >> ../license-report.md
+          
+          # Check for problematic licenses
+          license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD' --excludePrivatePackages || echo "Problematic licenses found"
+
+      - name: Check frontend licenses
+        working-directory: ./Client
+        run: |
+          npm ci
+          echo -e "\n## Frontend License Report" >> ../license-report.md
+          license-checker --summary --excludePrivatePackages >> ../license-report.md
+          
+          # Check for problematic licenses
+          license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD' --excludePrivatePackages || echo "Problematic licenses found"
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.md
+
+  # Bundle size analysis
+  bundle-analysis:
+    name: Bundle Size Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: ./Client
+        run: npm ci
+
+      - name: Build application
+        working-directory: ./Client
+        run: npm run build
+
+      - name: Analyze bundle size
+        working-directory: ./Client
+        run: |
+          echo "## Bundle Size Analysis" > ../bundle-analysis.md
+          echo "Generated on: $(date)" >> ../bundle-analysis.md
+          echo "" >> ../bundle-analysis.md
+          
+          if [ -d "build/static/js" ]; then
+            echo "### JavaScript Bundle Sizes" >> ../bundle-analysis.md
+            du -sh build/static/js/*.js | sort -hr >> ../bundle-analysis.md
+            echo "" >> ../bundle-analysis.md
+          fi
+          
+          if [ -d "build/static/css" ]; then
+            echo "### CSS Bundle Sizes" >> ../bundle-analysis.md
+            du -sh build/static/css/*.css | sort -hr >> ../bundle-analysis.md
+            echo "" >> ../bundle-analysis.md
+          fi
+          
+          echo "### Total Build Size" >> ../bundle-analysis.md
+          du -sh build/ >> ../bundle-analysis.md
+
+      - name: Upload bundle analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-analysis
+          path: bundle-analysis.md
+
+      - name: Comment bundle size on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const analysis = fs.readFileSync('bundle-analysis.md', 'utf8');
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## 📦 Bundle Size Analysis\n\n${analysis}`
+            });

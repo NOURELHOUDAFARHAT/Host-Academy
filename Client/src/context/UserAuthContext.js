@@ -12,7 +12,7 @@ import { auth } from "../config/firebase";
 const userAuthContext = createContext();
 
 export function UserAuthContextProvider({ children }) {
-  const [user, setUser] = useState({});
+  const [user, setUser] = useState(undefined); // undefined initially, then null (not authenticated) or user object
 
   function logIn(email, password) {
     return signInWithEmailAndPassword(auth, email, password);
@@ -32,6 +32,13 @@ export function UserAuthContextProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, (currentuser) => {
       console.log("Auth", currentuser);
       setUser(currentuser);
+      
+      // Store user in localStorage for components that still use it
+      if (currentuser) {
+        localStorage.setItem("user", JSON.stringify(currentuser));
+      } else {
+        localStorage.removeItem("user");
+      }
     });
 
     return () => {
